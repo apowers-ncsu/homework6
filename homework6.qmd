@@ -1,0 +1,281 @@
+---
+title: "homework6"
+author: "Andy Powers"
+format: html
+---
+
+# Homework 6
+
+## R Package Loads
+```{r}
+library(purrr)
+library(httr)
+```
+
+
+## Task 1: Conceptual Questions
+
+1.  The purpose of the function `lapply()` is to execute a function across all elements of a list, returning the list. In `purrr`, the equivalent function is `map()`.
+
+2.  To use `lapply()` to run a correlation evaluation with method of "kendall", we use this code: `lapply(my_list,cor,method="kendall"`.
+
+3.  `purrr` functions like `map()` use common programming function names, these functions offer helpful-ish shorthand for anonymous functions or subsetting, and they provide simpler ways to ensure the output matches a desired type.
+
+4.  A side-effect function is one that does not modify the passed object, often a data frame. It can be used in a piped chain of tidyverse calls to do something else while allowing the chain to continue with later actions on the same df.
+
+5.  Each function has its own temporary environment, within which variables may be defined and referenced, until the function completes and the environment is destroyed. Also, a variable named `sd` is not going to conflict with a function call using `sd()`.
+
+## Task 2: Writing R Functions
+
+### 1. getRMSE()
+
+I will write a function `getRMSE()` that takes a *vector* of responses and a *vector* of predictions, returning the RMSE.
+
+![](rmse.png)
+
+```{r}
+#####
+#Function getRMSE() - calculate RMSE for vector inputs.
+#Inputs: 
+#  vector of responses
+#  vector of predictions
+#  additional arguments for `mean()` function via `...`
+#Outputs: 
+#  RMSE
+#Assumptions: None
+#Validation: None
+#####
+
+getRMSE <- function(responses, predictions, ...) {
+  
+  #find squared diff (error) between response and predictions
+  errors_list <- map2(responses, predictions, \(x,y) (x - y)^2 )
+  
+  #unlist the result
+  errors <- unlist(errors_list)
+  
+  #find mean of errors and include ellipses
+  mean_error <- mean(errors,...)
+  
+  #find sq root of mean error
+  rmse <- sqrt(mean_error)
+
+  #return it
+  return(rmse)
+  
+}
+```
+
+### 2. Test getRMSE()
+
+Compile some values using the code provided. Test the function. Then repeat after replacing two response values with `NA_real_`, both with and without the additional argument to handle these.
+
+```{r}
+#provided code for test values
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+#call function
+getRMSE(resp,pred)
+```
+
+```{r}
+#replace two responses with NA
+resp[1:2] <- c(NA_real_,NA_real_)
+
+#test once without NA handling
+getRMSE(resp,pred)
+
+#then again with NA handling in call
+getRMSE(resp,pred,na.rm=TRUE)
+```
+
+### 3. getMAE()
+
+Write a function for MAE using similar specifications as `getRMSE()`.
+
+![](mae.png)
+
+```{r}
+#####
+#Function getMAE() - calculate MAE for vector inputs.
+#Inputs: 
+#  vector of responses
+#  vector of predictions
+#  additional arguments for `mean()` function via `...`
+#Outputs: 
+#  MAE
+#Assumptions: None
+#Validation: None
+#####
+
+getMAE <- function(responses, predictions, ...) {
+  
+  #find abs diff (absolute error) between response and predictions
+  abs_errors_list <- map2(responses, predictions, \(x,y) abs(x-y))
+  
+  #unlist the result
+  abs_errors <- unlist(abs_errors_list)
+  
+  #find mean of errors and include ellipses
+  mae <- mean(abs_errors,...)
+  
+  #return it
+  return(mae)
+  
+}
+```
+
+### 4. Test getMAE()
+
+Compile some values using the code provided. Test the function. Then repeat after replacing two response values with `NA_real_`, both with and without the additional argument to handle these.
+
+```{r}
+#provided code for test values
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+#call function
+getMAE(resp,pred)
+```
+
+```{r}
+#replace two responses with NA
+resp[1:2] <- c(NA_real_,NA_real_)
+
+#test once without NA handling
+getMAE(resp,pred)
+
+#then again with NA handling in call
+getMAE(resp,pred,na.rm=TRUE)
+```
+
+### 5. Wrapper getErrorMetrics()
+
+This function should get either metric or both, by calling the appropriate helper functions previously defined. Returned values should have appropriate names.
+
+It must check that two numeric (atomic) vectors were passed, else print an error and exit.
+
+By default, the function should return both metrics and include names. Adding a character string of metrics to find should facilitate a change in behavior.
+
+```{r}
+#####
+#Function getErrorMetrics() - calculate RMSE and/or MAE for vector inputs.
+#Inputs: 
+#  vector of responses
+#  vector of predictions
+#  optional metricList character string to identify desired metrics
+#  additional arguments for `mean()` function via `...`
+#Outputs: 
+#  RMSE and/or MAE
+#Assumptions: None
+#Validation: Will error gracefully with message if non-atomic vectors are passed.
+#####
+
+getErrorMetrics <- function(responses, predictions, metricList=NULL, ...) {
+  
+  #error checking - if any of these fail, give message and exit
+  if (!(is.vector(responses)
+        & is.vector(predictions)
+        & is.atomic(responses)
+        & is.atomic(predictions)
+        & is.numeric(responses)
+        & is.numeric(predictions)
+        )
+      )
+    stop("Invalid argument type")
+  
+  #calculate both metrics
+  rmse <- getRMSE(responses,predictions,...)
+  mae <- getMAE(responses,predictions,...)
+  
+  #identify needed values
+  result<-NULL
+  if(is.null(metricList)) 
+    result <- c("RMSE" = rmse, "MAE" = mae)
+  else {
+    if("rmse" %in% metricList)
+      result <- c(result,"RMSE" = rmse)
+    if("mae" %in% metricList)
+      result <- c(result,"MAE" = mae)
+  }
+
+  return(result)
+
+}
+```
+
+### 6. Test wrapper getErrorMetrics()
+
+Compile some values using the code provided. Test the function, asking for each metric individually and once with both.
+
+```{r}
+#provided code for test values
+set.seed(10)
+n <- 100
+x <- runif(n)
+resp <- 3 + 10 * x + rnorm(n)
+pred <- predict(lm(resp ~ x), data.frame(x))
+
+#call function without args
+getErrorMetrics(resp,pred)
+
+#call with each metric individually, then together
+getErrorMetrics(resp,pred,"mae")
+getErrorMetrics(resp,pred,"rmse")
+getErrorMetrics(resp,pred,c("mae","rmse"))
+```
+
+Then repeat after replacing two response values with `NA_real_`, first without the special argument to handle these.
+
+```{r}
+#replace two responses with NA
+resp[1:2] <- c(NA_real_,NA_real_)
+
+#call function without args
+getErrorMetrics(resp,pred)
+
+#call with each metric individually, then together
+getErrorMetrics(resp,pred,"mae")
+getErrorMetrics(resp,pred,"rmse")
+getErrorMetrics(resp,pred,c("mae","rmse"))
+
+```
+
+Again, now adding the NA-handling argument.
+
+```{r}
+#call function without args
+getErrorMetrics(resp,pred,na.rm=TRUE)
+
+#call with each metric individually, then together
+getErrorMetrics(resp,pred,"mae",na.rm=TRUE)
+getErrorMetrics(resp,pred,"rmse",na.rm=TRUE)
+getErrorMetrics(resp,pred,c("mae","rmse"),na.rm=TRUE)
+
+```
+
+ Finally, pass it invalid data like a data frame to show it errors properly.
+ 
+```{r}
+getErrorMetrics(as.data.frame(resp),pred)
+```
+ 
+## Task 3: Query API and Tidy-Style Function
+
+My API key is: 00cc83504de747bbb211235233c86424
+
+### 1. Use httr::GET()
+
+Find a topic of interest and retrieve information on it.
+
+```{r}
+x<-GET("https://newsapi.org/v2/everything?q=Apple&from=2024-10-10&sortBy=popularity&apiKey=00cc83504de747bbb211235233c86424")
+```
+
