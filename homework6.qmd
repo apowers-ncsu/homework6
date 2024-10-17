@@ -10,6 +10,10 @@ format: html
 ```{r}
 library(purrr)
 library(httr)
+library(jsonlite)
+library(tidyr)
+library(lubridate)
+library(dplyr)
 ```
 
 
@@ -264,8 +268,12 @@ getErrorMetrics(resp,pred,c("mae","rmse"),na.rm=TRUE)
  Finally, pass it invalid data like a data frame to show it errors properly.
  
 ```{r}
-getErrorMetrics(as.data.frame(resp),pred)
+#getErrorMetrics(as.data.frame(resp),pred)
 ```
+
+Result is as follows, which I must comment out to render fully and run my quarto doc.
+
+*Error in getErrorMetrics(as.data.frame(resp), pred) :   Invalid argument type*
  
 ## Task 3: Query API and Tidy-Style Function
 
@@ -273,9 +281,137 @@ My API key is: 00cc83504de747bbb211235233c86424
 
 ### 1. Use httr::GET()
 
-Find a topic of interest and retrieve information on it.
+Find a topic of interest and retrieve information on it. Arbitrarily, I'll query for articles on NC candidate Mark Robinson.
 
 ```{r}
-x<-GET("https://newsapi.org/v2/everything?q=Apple&from=2024-10-10&sortBy=popularity&apiKey=00cc83504de747bbb211235233c86424")
+rawResults <- GET("https://newsapi.org/v2/everything?q=mark+robinson&from=2024-10-01&sortBy=popularity&apiKey=00cc83504de747bbb211235233c86424")
+```
+
+### 2. Parse and pluck
+
+Using the methods from Project 1, extract the `content` and use `purrr::pluck()` to get the `articles` element. First column should be a list column.
+
+```{r}
+  #pull content JSON branch and convert to char
+  parsed_results <- fromJSON(rawToChar(rawResults$content))
+
+  #grab the articles element
+  articles <- pluck(parsed_results,"articles")
+
+```
+
+### 3. Function to query
+
+Now, I'll build a quick function to make this repeatable.
+
+```{r}
+#####
+#Function queryNewsAPI() - facilitate queries to the News API of newsapi.org
+#Inputs: 
+#  subject (string, spaces replaced by +)
+#  startDate (string in format yyyy-mm-dd, within last 30 days)
+#  apiKey
+#Outputs: 
+#  Will parse content from raw to char, parse JSON, pluck the 'articles' element and return it
+#Assumptions: None
+#Validation: None
+#####
+
+queryNewsAPI <- function(subject, startDate, apiKey) {
+  
+  # Sample URL format
+  # https://newsapi.org/v2/everything?q=
+  # TOPIC
+  # &from=
+  # STARTDATE
+  # &sortBy=popularity&apiKey=
+  # APIKEY
+  
+  url1 <- "https://newsapi.org/v2/everything?q="
+  url2 <- subject
+  url3 <- "&from="
+  url4 <- startDate
+  url5 <- "&sortBy=popularity&apiKey="
+  url6 <- apiKey
+  
+  url <- paste(url1,
+               url2,
+               url3,
+               url4,
+               url5,
+               url6,
+               sep="")
+
+  #pull the url, raw to char, parse json, grab articles element
+  rawResults <- GET(url)
+  charResults <- rawToChar(rawResults$content)
+  data <- 
+    charResults |>
+    fromJSON() |>
+    pluck("articles")
+  
+  return(data)
+    
+}
+```
+
+Calling it twice to collect some data. First on Mark Robinson, then on Wilmington NC.
+
+```{r}
+data1 <- queryNewsAPI('mark+robinson','2024-10-08','00cc83504de747bbb211235233c86424')
+data2 <- queryNewsAPI('wilmington+nc','2024-10-08','00cc83504de747bbb211235233c86424')
+```
+
+### 4. Summarize names of sources
+
+Here, we want a one-way contingency table (counts) of the `name` of the `source` for each article. This is easy with the `table()` function used in HW5.
+
+```{r}
+table(data1$source$name)
+```
+
+### 5. Adjust by publish dates
+
+For both data objects, change `publishedAt` column into a date column via `lubridate`.
+
+Then sort the data frames by their new parsed date column.
+
+Finally, create a new column `pub_diff` via `lag()` and `mutate()` that is the difference between publish dates. Save the modified versions as new data frames.
+
+```{r}
+newdata1 <- 
+  data1 |>
+  mutate(publishedAt = ymd_hms(publishedAt)) |>
+  arrange(publishedAt) |>
+  mutate(pub_diff = publishedAt - dplyr::lag(publishedAt,1)) |>
+  as.data.frame()
+
+newdata2 <- 
+  data2 |>
+  mutate(publishedAt = ymd_hms(publishedAt)) |>
+  arrange(publishedAt) |>
+  mutate(pub_diff = publishedAt - dplyr::lag(publishedAt,1)) |>
+  as.data.frame()
+```
+
+### 6. Map some stat data
+
+Choose one df, subset to return only date version of `publishedAt` and `pub_diff`.
+
+Call `map()` for mean, sd, median of the columns. Use an anonymous function. Note that `pub_diff` will have NA so ensure we add `na.rm=TRUE` in calls.
+
+```{r}
+
+finaldata <-
+  newdata2[c("publishedAt","pub_diff")] |>
+  map(\(x) 
+    paste("mean:",
+          mean(x,na.rm=TRUE),
+          "sd:",
+          sd(x,na.rm=TRUE),
+          "median:",
+          median(x,na.rm=TRUE)))
+   
+finaldata 
 ```
 
